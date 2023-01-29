@@ -1,0 +1,274 @@
+---
+title: "Predicting Heart Failure With Different Models"
+author:
+  - name: Arda Gemalmaz 16561060858
+    affil: 1
+  - name: Ebru Kılıç 14449202680
+    affil: 2
+column_numbers: 5
+logoright_name: https&#58;//raw.githubusercontent.com/brentthorne/posterdown/master/images/betterhexlogo.png
+logoleft_name: https&#58;//raw.githubusercontent.com/brentthorne/posterdown/master/images/betterhexlogo.png
+output: 
+  posterdown::posterdown_html:
+    self_contained: false
+bibliography: packages.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Introduction
+
+Cardiovascular diseases are one of the biggest dangers to human life. As observed, approximately 17.9 million people are dying from cardiovascular diseases. Some people which have cardiovascular risk or disease need to be detected before it is too late. This project will be a great help for that. The goal of this project is to predict heart disease on sample data and make a classification to identify which category belongs to based on a training set while we are doing observations on the dataset. The dataset that we are using contains 13 clinical features that we will use to predict the death rate.
+
+# Methods
+
+The methodology of this work is to train Logistic Regression and Decision Tree models. The logistic regression model is trained in two ways. Firstly trained with all of the predictors and secondly with some chosen predictors. Also, the decision tree model is trained by using the unpruned, pruned, Rpart library, and 5-fold cross-validation decision tree models.
+
+# Results/Findings
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Data Loading
+HeartFailure = read.csv("HeartFailureClinicalRecords.csv")
+head(HeartFailure)
+# Library
+set.seed(85868)
+library(corrplot)
+library(caret)
+library(tree)
+library(tidyverse)
+library(rpart)
+library(mlbench)
+library(glm2)
+library(ISLR2)
+library(boot)
+```
+
+# Corralation Matrix
+
+There are not any redundant predictors.
+
+```{r}
+# Creating correlation matrix.
+ColumnNumber = unlist(lapply(HeartFailure, is.numeric))
+numericdata = HeartFailure[ , ColumnNumber]
+correlationmatrix = cor(numericdata)
+corrplot(correlationmatrix, method = "color")
+```
+
+# Numerical Data Analysis
+
+```{r echo=FALSE}
+Histogram = function(column, name){
+  Healthy = c()
+  Sick = c()
+  for(x in 1:length(HeartFailure$DEATH_EVENT)){
+    result = HeartFailure$DEATH_EVENT[x]
+    if(result == 0){
+      Healthy = append(Healthy, column[x])
+    }
+    else{
+      Sick = append(Sick, column[x])
+    }
+  }
+  hist(Healthy, col = rgb(0,1,0, 0.5), main = name, xlab = "Value")
+  hist(Sick, add = TRUE, col = rgb(1,0,0, 0.5))
+  legend('topright', c('0', '1'), fill=c(rgb(0,1,0, 0.5), rgb(1,0,0, 0.5)))
+}
+```
+
+```{r echo=FALSE}
+par(mfrow = c(2, 2))
+Histogram(HeartFailure$age, "AGE")
+Histogram(HeartFailure$creatinine_phosphokinase, "CREATININE PHOSPHOKINASE")
+Histogram(HeartFailure$ejection_fraction, "EJECTION FRACTION")
+Histogram(HeartFailure$platelets, "PLATELETS")
+Histogram(HeartFailure$serum_creatinine, "SERUM CREATININE")
+Histogram(HeartFailure$serum_sodium, "SERUM SODIUM")
+Histogram(HeartFailure$time, "TIME")
+```
+
+# Categorical Data Analysis
+
+```{r}
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = sex)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~sex)
+
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = smoking)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~smoking)
+
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = high_blood_pressure)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~high_blood_pressure)
+
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = diabetes)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~diabetes)
+
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = anaemia)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~anaemia)
+```
+
+```{r include=FALSE}
+# Missing value determination.
+sum(is.na(HeartFailure))
+#
+sum(HeartFailure$creatinine_phosphokinase == 0)
+sum(HeartFailure$ejection_fraction == 0)
+sum(HeartFailure$platelets == 0)
+sum(HeartFailure$serum_creatinine == 0)
+sum(HeartFailure$serum_sodium == 0)
+sum(HeartFailure$time == 0)
+# Data Partitioning as %80.
+Index = sample(nrow(HeartFailure), 0.8*nrow(HeartFailure))
+# Training data.
+Train = HeartFailure[Index, ]
+# Testing data.
+Test = HeartFailure[-Index, ]
+```
+
+# Logisitic Regression
+
+```{r include=FALSE}
+# Logisitic Regression
+regmodel <- glm(data = Train, formula = DEATH_EVENT ~ ., family = "binomial")
+summary(regmodel)
+modelPre = ifelse(predict(regmodel, newdata = Test, type = "response") > 0.5, 1, 0)
+# ---
+modelchosen <- glm(data = Train, formula = DEATH_EVENT ~ age + ejection_fraction + serum_creatinine + time, family = "binomial")
+modelchosenPred = ifelse(predict(modelchosen, newdata = Test, type = "response") > 0.5, 1, 0)
+# ---
+library(boot)
+# without any additional model-fitting LOOCV estimates
+
+cv = cv.glm(Train, regmodel)
+cv$delta
+
+cv5 = cv.glm(Train, regmodel, K = 5) # Corresponds 5-fold CV
+cv5$delta
+
+cv10 = cv.glm(Train, regmodel, K = 10) # Corresponds 10-fold CV
+cv10$delta
+```
+
+```{r include=FALSE}
+# Confusion matrix and statistics.
+TestDEATH_EVENTLogisitic = factor(Test$DEATH_EVENT, levels = c(0, 1))
+ModelPreFactor = factor(modelPre, levels = c(0, 1))
+```
+
+```{r include=FALSE}
+modelchosenFac = factor(modelchosenPred, levels=c(0, 1))
+```
+
+```{r}
+table(ModelPreFactor, TestDEATH_EVENTLogisitic)
+```
+
+# Decision Tree
+
+```{r modeling, echo=FALSE}
+# Factor method.
+HeartFailure$DEATH_EVENT <- factor(ifelse(HeartFailure$DEATH_EVENT < 0.5, "No", "Yes"))
+TestDEATH_EVENT <- HeartFailure$DEATH_EVENT[-Index]
+# Decision Tree.
+DecisionTreeModel1 <- tree(DEATH_EVENT~., HeartFailure, subset = Index)
+# Plot.
+plot(DecisionTreeModel1)
+text(DecisionTreeModel1, pretty = 0)
+```
+
+```{r echo=FALSE}
+# Confusion matrix and statistics.
+TreePred <- predict(DecisionTreeModel1, Test, type = "class")
+#confusionMatrix(data = TreePred, reference = TestDEATH_EVENT)
+table(TreePred, TestDEATH_EVENT)
+```
+
+# Pruning Decision Tree
+
+Pruning will reduce the missclassification error rate of the model.
+
+```{r echo=FALSE}
+# Pruning level.
+cv.HeartFailure <- cv.tree(DecisionTreeModel1, FUN = prune.misclass)
+# Plot.
+par(mfrow = c(2,2))
+plot(cv.HeartFailure$size, cv.HeartFailure$dev, type = "b")
+plot(cv.HeartFailure$k, cv.HeartFailure$dev, type = "b")
+plot(cv.HeartFailure$k, cv.HeartFailure$size, type = "b")
+```
+
+```{r echo=FALSE}
+# Pruning.
+Prune.DecisionTreeModel1 <- prune.tree(DecisionTreeModel1, best = 2)
+# Pruned tree model.
+plot(Prune.DecisionTreeModel1)
+text(Prune.DecisionTreeModel1, pretty = 0)
+```
+
+```{r echo=FALSE}
+# Confusion matrix and statistics.
+TreePredictPrune <- predict(Prune.DecisionTreeModel1, Test, type = "class")
+#confusionMatrix(data = TreePredictPrune, reference = TestDEATH_EVENT)
+table(TreePredictPrune, TestDEATH_EVENT)
+```
+
+# Rpart Decision Tree
+
+```{r echo=FALSE}
+Test$DEATH_EVENT <- factor(ifelse(Test$DEATH_EVENT < 0.5, "No", "Yes"))
+Train$DEATH_EVENT <- factor(ifelse(Train$DEATH_EVENT < 0.5, "No", "Yes"))
+# Rpart
+DecisionTreeModel2 <- rpart(DEATH_EVENT~., data = Train, method = "class")
+# Plot the Rpart
+par(xpd = NA) # Avoid clipping the text in some device
+plot(DecisionTreeModel2)
+text(DecisionTreeModel2, digits = 3)
+```
+
+```{r echo=FALSE}
+# Prediction.
+Predicted <- DecisionTreeModel2 %>%
+  predict(Test, type = "class")
+# Confusion matrix.
+table(Predicted, TestDEATH_EVENT)
+```
+
+# Rpart Decision Tree With Cross Validation
+
+```{r include=FALSE}
+# 5 fold cross validation
+DecisionTreeModel3 <- train(DEATH_EVENT ~., data = Train, method = "rpart", trControl = trainControl("cv", number = 5), tuneLength = 10)
+```
+
+```{r echo=FALSE}
+# Plot.
+par(xpd = NA)
+plot(DecisionTreeModel3$finalModel)
+text(DecisionTreeModel3$finalModel, digits = 3)
+# Prediction.
+Predicted3 <- DecisionTreeModel3 %>% predict(Test)
+# Confusion matrix.
+table(Predicted3, TestDEATH_EVENT)
+```
+
+# Conclusion
+
+The aim was by using Logistic Regression and Decision Tree models, classify the heart failure as accurate as possible. We predict heart failure as we do observations on the dataset, we classify the data to determine which group each prediction about heart disease belongs to using a training set. Finally, we decided to choose Rpart Decision Tree With Cross Validation Model as the best model since it has the best values.
+
+```{r, include=FALSE}
+knitr::write_bib(c('knitr','rmarkdown','posterdown','pagedown'), 'packages.bib')
+```
+
+# References
+
+1) Aman Chauhan (2023, January 2), [Online]. Available: https://www.kaggle.com/datasets/whenamancodes/heart-failure-clinical-records
+
+2) yashchuahan (2023, January 3), [Online]. Available: https://www.geeksforgeeks.org/correlation-matrix-in-r-programming/
+
+3) Subha Ganapathi (2023, January 3), [Online]. Available: https://medium.com/nerd-for-tech/implementing-decision-trees-in-r-regression-problem-using-rpart-c74cbd9e0b7b

@@ -1,0 +1,578 @@
+---
+title: "ADA 442 - Statistical Learning"
+subtitle: "Predicting Heart Failure With Different Models"
+author: "Arda Gemalmaz 16561060858 Ebru Kılıç 14449202680"
+date: "04 December, 2023"
+output: 
+  pdf_document:
+    number_sections: yes
+    toc: yes
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Cardiovascular diseases are one of the biggest dangers to human life. As observed, approximately 17.9 million people are dying from cardiovascular diseases. Some people which have cardiovascular risk or disease need to be detected before it is too late. This project will be a great help for that. The goal of this project is to predict heart disease on sample data and make a classification to identify which category belongs to based on a training set while we are doing observations on the dataset. The dataset that we are using contains 13 clinical features that we will use to predict the death rate.
+
+# Methodology
+
+The methodology of this work is to train Logistic Regression and Decision Tree models. The logistic regression model is trained in two ways. Firstly trained with all of the predictors and secondly with some chosen predictors. Also, the decision tree model is trained by using the unpruned, pruned, Rpart library, and 5-fold cross-validation decision tree models.
+
+# Dataset
+
+The dataset is from Kaggle. This can be findable in the references part. The columns are “age, anaemia, creatinine_phosphokinase, diabetes, ejection_fraction, high_blood_pressure, platelets, serum_creatinine, serum_sodium, and sex”.
+
+```{r data}
+# Data Loading
+HeartFailure = read.csv("HeartFailureClinicalRecords.csv")
+head(HeartFailure)
+```
+
+# Libraries
+
+```{r message=FALSE, warning=FALSE}
+set.seed(85868)
+library(corrplot)
+library(caret)
+library(tree)
+library(tidyverse)
+library(rpart)
+library(mlbench)
+library(glm2)
+library(ISLR2)
+library(boot)
+```
+
+# Data Analysis
+
+There are 13 clinical features and 299 observations. Predictors should be analyzed by getting more precise judgments about the data. In our data, there are numerous binaural and categorical data. Numerical data values are age, creatinine_phosphokinase, ejection_fraction, platelets, and serum_creatinine.
+
+```{r descriptives}
+# Data descriptives.
+dim(HeartFailure)
+summary(HeartFailure)
+```
+
+## Corralation Matrix
+
+To see whether or not redundant predictors exist in the data correlation matrix should be checked. The correlation matrix was created with numeric data.
+
+```{r}
+# Creating correlation matrix.
+ColumnNumber = unlist(lapply(HeartFailure, is.numeric))
+numericdata = HeartFailure[ , ColumnNumber]
+correlationmatrix = cor(numericdata)
+corrplot(correlationmatrix, method = "color")
+```
+
+As seen in the correlation matrix there are no redundant predictors.
+
+```{r}
+# Histogram.
+par(mfrow = c(2, 2))
+hist(HeartFailure$age, main = "AGE", xlab = "AGE")
+hist(HeartFailure$creatinine_phosphokinase, main = "CREATININE PHOSPHOKINASE", xlab = "CREATININE PHOSPHOKINASE")
+hist(HeartFailure$ejection_fraction, main = "EJECTION FRACTION", xlab = "EJECTION FRACTION")
+hist(HeartFailure$platelets, main = "PLATELETS", xlab = "PLATELETS")
+hist(HeartFailure$serum_creatinine, main = "SERUM CREATININE", xlab = "SERUM CREATININE")
+hist(HeartFailure$serum_sodium, main = "SERUM SODIUM", xlab = "SERUM SODIUM")
+hist(HeartFailure$time, main = "TIME", xlab = "TIME")
+hist(HeartFailure$DEATH_EVENT, main = "DEATH EVENT", xlab = "DEATH EVENT")
+```
+
+## Numerical Data Analysis
+
+```{r echo=FALSE}
+Histogram = function(column, name){
+  Healthy = c()
+  Sick = c()
+  for(x in 1:length(HeartFailure$DEATH_EVENT)){
+    result = HeartFailure$DEATH_EVENT[x]
+    if(result == 0){
+      Healthy = append(Healthy, column[x])
+    }
+    else{
+      Sick = append(Sick, column[x])
+    }
+  }
+  hist(Healthy, col = rgb(0,1,0, 0.5), main = name, xlab = "Value")
+  hist(Sick, add = TRUE, col = rgb(1,0,0, 0.5))
+  legend('topright', c('0', '1'), fill=c(rgb(0,1,0, 0.5), rgb(1,0,0, 0.5)))
+}
+```
+
+```{r}
+par(mfrow = c(2, 2))
+Histogram(HeartFailure$age, "AGE")
+Histogram(HeartFailure$creatinine_phosphokinase, "CREATININE PHOSPHOKINASE")
+Histogram(HeartFailure$ejection_fraction, "EJECTION FRACTION")
+Histogram(HeartFailure$platelets, "PLATELETS")
+Histogram(HeartFailure$serum_creatinine, "SERUM CREATININE")
+Histogram(HeartFailure$serum_sodium, "SERUM SODIUM")
+Histogram(HeartFailure$time, "TIME")
+```
+
+### AGE
+
+The age data has accumulated around 60. Also, patients after 70 are more likely to die from heart failure.
+
+### CREATININE PHOSPHOKINASE
+
+The creatinine phosphokinase (CPK) data represent the level of the CPK enzyme in the blood (mcg/L). The healthy range for CPK is between 10 and 120 (mcg/L). Generally, deaths from heart disease happened the value lower than 1000.
+
+### EJECTION FRACTION
+
+The ejection fraction data is the percentage of blood leaving the heart at each contradiction. A healthy person's ejection fraction is between %50 and %75. In our data, most deaths from heart failure happened when the ejection fraction is below %25.
+
+### PLATELETS
+
+The platelets data represents platelets in the blood (kiloplatelets/mL). Normal platelet in adults should be between 150k and 450k. If the platelet value is less than 150k stopping the bleeding will be a problem. In the data patients who has platelet lower than 100k has a higher risk of heart failure.
+
+### SERUM CREATININE
+
+The serum creatinine data represent the level of the serum creatinine in the blood (mg/dL). For healthy patients, the range for serum creatinine should be 0.59 to 1.35 (mg/dL). If the values are not between 0.59 and 1.35 (mg/dL) patients have a high risk of dying from heart failure.
+
+### SERUM SODIUM
+
+The serum sodium data represent the level of serum sodium in the blood (mEq/L). For healthy patients, the range for serum sodium should be 135 to 145 (mEq/L). In the data as seen roughly the range other than 130 to 145 (mEq/L) has a higher risk of dying from heart failure.
+
+### TIME
+
+Time is the follow-up period as in days. If the follow-up period is between 0 and 50 it is likely the patient will die from heart failure.
+
+## Categorical Data Analysis
+
+```{r}
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = sex)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~sex)
+
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = smoking)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~smoking)
+
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = high_blood_pressure)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~high_blood_pressure)
+
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = diabetes)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~diabetes)
+
+ggplot(HeartFailure, aes(x = factor(DEATH_EVENT), fill = anaemia)) +
+  geom_bar(position = position_dodge(preserve = "single",))+
+  facet_wrap(~anaemia)
+```
+The death event value divides categorical features in half. A score of 0 indicates no death event, while a score of 1 indicates that there is death event. Most of the estimations in the presented analysis come from the charts above.
+
+### SEX
+
+From the graph, we can say that heart disease is more common in male individuals. There are approximately 300 patients. Heart disease affects more than half of these people.  Female patients are also more likely to be heart disease-free since their "0" scores are higher than their "1" ones. 
+This is, clearly distinguishes between heart disease, and will be a suitable fit for the model training phase.
+
+### SMOKING
+
+From the graph, approximately 100 people are smoking. In the smoking part, if we look at the gap between people who have heart disease and who do not, it is less than people who is not smoking. The ratio between those who have heart disease and who do not is bigger in people who are smoking.
+From that, we can say that people who are smoking are prone to get heart disease. This column will be a good fit for the model training phase since this column make a clear
+the distinction between heart disease.
+
+### HIGH BLOOD PRESSURE
+
+As same as the smoking graph, if we look at the graph the number of people who have high blood pressure and heart disease is lower than the people who do not have high blood pressure. This is because around 105 people have a high blood pressure of 194. If you look at the ratio between them, people who have high blood pressure has bigger ratio, the gap is smaller. This is, clearly distinguishes between heart disease, and will be a suitable fit for the model training phase.
+
+### DIABETES
+
+The number of people who has diabetes is 125, and who do not are 174. Of the people who have diabetes, approximately 40 people have heart disease, and 85 people has not. From the part that people have diabetes, approximately 40 people have heart disease, and 85 people have not. And from the part that people do not have diabetes, approximately 55 people has heart disease, and 120 people have not. The ratio of those who have heart disease to those who have no heart disease is bigger in people who have diabetes with a small difference. Therefore, people with diabetes are more likely to have heart disease. As a last word, this column is suitable for the model training phase.
+
+### ANAEMIA
+
+For anaemia, it is similar to the diabetes graph. The gap between people who have anemia is smaller than between people who do not. Also, their ratio is bigger for people having heart disease or not. Therefore, this column is suitable for the model training phase.
+
+# Data Preprocessing
+
+To determine if there is a missing value in the data. Rows with NA values can simply be removed. But since this is about health and still the particular rows would still include valuable information, filling them using imputation would be more suitable.
+
+```{r preprocess}
+# Missing value determination.
+sum(is.na(HeartFailure))
+```
+
+As seen above there is not any missing value. But there might be some technical mistake about missing data. There might be patients that has unknown history and have 0 values in columns as interpreted as NA. Since we had a doubt about it, check it to see are there any unusual 0 values.
+
+```{r}
+sum(HeartFailure$creatinine_phosphokinase == 0)
+sum(HeartFailure$ejection_fraction == 0)
+sum(HeartFailure$platelets == 0)
+sum(HeartFailure$serum_creatinine == 0)
+sum(HeartFailure$serum_sodium == 0)
+sum(HeartFailure$time == 0)
+```
+All numerical values have not have any 0 values. Therefore, there seems nothing unusual in values. There cannot be missing values.
+
+In the data, all 12 clinical features with help determine death events will be used. Because there is no unrelated value such as patient number in the data. 
+
+# Data Partioning
+
+We split the data into $80\%$ training and $20\%$ testing.
+
+```{r}
+# Data Partitioning as %80.
+Index = sample(nrow(HeartFailure), 0.8*nrow(HeartFailure))
+# Training data.
+Train = HeartFailure[Index, ]
+# Testing data.
+Test = HeartFailure[-Index, ]
+```
+
+# Model Fit Comparison
+
+## Logisitic Regression
+
+Couple logistic regression models fitting. This is the summary:
+
+```{r}
+# Logisitic Regression
+regmodel <- glm(data = Train, formula = DEATH_EVENT ~ ., family = "binomial")
+summary(regmodel)
+modelPre = ifelse(predict(regmodel, newdata = Test, type = "response") > 0.5, 1, 0)
+```
+
+Difference between predicted value (Pr) and an observed value is known as a residual.
+The median of the deviance residuals is -0.2405.
+The first quantile range is -0.5803.
+The third quantile range is 0.4416.   
+The maximum value is 2.7428.
+The minimum value is -2.1847.
+
+Lower p-values suggest that the variable in the model is meaningful. The Pr(<|z|) provides the p-value linked with the z-value.
+The predictors that more likely to chance for changing the null hypothesis' conclusion are, age, ejection_fraction, serum_creatinine, time. We are taking all to train since they have stars. Hypothesis might be, the patient has heart disease.   
+
+```{r}
+modelchosen <- glm(data = Train, formula = DEATH_EVENT ~ age + ejection_fraction + serum_creatinine + time, family = "binomial")
+modelchosenPred = ifelse(predict(modelchosen, newdata = Test, type = "response") > 0.5, 1, 0)
+```
+
+By cross validation, error rate has calculated below. 
+We did not use separate validation since it can host high variability. When divided, it can reduces training samples' number.
+
+The leave-one-out cross validation, LOOCV is a special case of k-fold CV in which k = n. We choose k = 5 and k = 10 because empirical evidence suggests that  these values produce test error rate estimates that are do not cause overly high in bias and not cause overly high variance.
+The data is divided by LOOCV into m-1 samples for training and 1 sample for validation. The data is divided into 5 equal chunks for 5-fold cross validation, and one of the chunks is validated for each fold in 10-fold cross validation as well.
+
+The second component provides the bias-corrected cross-validation error, whereas the delta array provides the raw cross-validation prediction error. By using the provided formula, the errors for cross validation are determined.
+Formula:
+
+MSE = $\frac{1}{m} \Sigma_{i=1}^m({y}-\hat{y})^2$
+
+$m$ : the number of data points
+
+$y$ : the actual values
+
+$\hat{y}$ : the predicted values
+
+```{r}
+library(boot)
+# without any additional model-fitting LOOCV estimates
+
+cv = cv.glm(Train, regmodel)
+cv$delta
+
+cv5 = cv.glm(Train, regmodel, K = 5) # Corresponds 5-fold CV
+cv5$delta
+
+cv10 = cv.glm(Train, regmodel, K = 10) # Corresponds 10-fold CV
+cv10$delta
+```
+
+```{r}
+sprintf("Raw error of LOOCV: %.7f", cv$delta[2])
+sprintf("Raw error of LOOCV 5-Fold: %.7f", cv5$delta[1])
+sprintf("Raw error of LOOCV 10-Fold: %.7f", cv10$delta[1])
+
+sprintf("bias corrected error of LOOCV: %.7f", cv$delta[2])
+sprintf("bias corrected error of 5-Fold: %.7f", cv5$delta[2])
+sprintf("bias corrected error of 10-Fold: %.7f", cv10$delta[2])
+```
+
+The smallest raw error is 0.1331577 with 5-fold. The highest one is 0.1424933 with 10-fold.
+Once the bias values have been applied to the raw error, the smallest one is, again 5-fold with 0.1316076. And again highest one is 10-fold with 0.1412517.
+
+LOOCV first appears to be the ideal cross validation method because of its low bias corrected error and low raw error. However, it runs the danger of overfitting the data, which can lead to misleading error rates.
+
+Moreover, the error difference between the 5-fold CV and LOOCV can be disregarded because there is a small difference.
+
+Furthermore, compared to 5-fold CV, 10-fold cross validation has the highest error rate and requires more processing power. 5-fold cv, wants the most computing power, which would be a significant disadvantage if the data were substantially larger.
+
+With the aforementioned justifications, LOOCV is the preffered one.
+
+## Logisitic Regression Result
+
+True positive (TP) which is predicted as positive value and it is true.
+True negative (TN) which is predicted as negative value and it is true.
+False negative (FN) which is type 2 error is predicted as negative value and it is false.
+False positive (FP) which is type 1 error is predicted as positive value and it is false.
+
+Accuracy:
+(TP + TN) / TP + TN + FP + FN
+
+Predictive analytics' concept of precision describes how well the model's predictions match the actual data. The data points closely match the predictions the more accurate the model is. It is in predicted positive classes.
+
+Recall is looking for false negatives that were thrown into prediction mix. It is in all positive classes.
+
+If a patient has heart disease, it is generally understood in real life that this is a bad scenario. Having no heart disease is a good thing for the patient. Suppose that the 0 0 index is TP while looking at the confusion matrix.
+
+```{r}
+# Confusion matrix and statistics.
+TestDEATH_EVENTLogisitic = factor(Test$DEATH_EVENT, levels = c(0, 1))
+ModelPreFactor = factor(modelPre, levels = c(0, 1))
+confusionMatrix(data = ModelPreFactor, reference = TestDEATH_EVENTLogisitic)
+```
+
+We can observe that, in the confusion matrix of logistic regression matrix, 83.33% is the percentage of logistic regression's accuracy. 
+The sum of the correct predictions which is True Positives and True Negatives is 50 (38 + 12 = 50).
+Total cases are 38 + 12 + 5 + 5 = 60.
+50 / 60 is approximately 0.83333.
+
+Recall from the formula: 
+TP / (TP + FN)
+
+38 / (38 + 5) is approximately 0.88372.
+
+Precision from the formula:
+TP / Predictive Results or TP / (TP + FP) 
+
+38 / (38 + 5) is approximately 0.88372.
+
+```{r}
+modelchosenFac = factor(modelchosenPred, levels=c(0, 1))
+confusionMatrix(data= modelchosenFac, reference= TestDEATH_EVENTLogisitic)
+```
+Recall from the formula: 
+TP / (TP + FN)
+
+39 / (39 + 4) is approximately 0.9070.
+
+Precision from the formula:
+TP / Predictive Results or TP / (TP + FP) 
+
+39 / (39 + 6) is approximately 0.8667.
+
+The confusion matrix shown above is from a model that was trained on certain columns and while its recall value is higher than that of a standard logistic regression model, its precision value is lower.
+The F score should be examined in order to decide which one is appropriate for the heart disease prediction instance.
+
+```{r}
+sprintf("Specific Logistic model F score: %.5f", F_meas(data=modelchosenFac, reference=TestDEATH_EVENTLogisitic))
+
+sprintf("Logistic model F score: %.5f", F_meas(data=modelchosenFac, reference=TestDEATH_EVENTLogisitic))
+```
+
+From the comparison, specific logistic regressions and normal logistic regressions F score is equal. Therefore, do not have to involve to comparison part the Specific logistic regression model.
+
+## Decision Tree
+
+Before applying the decision tree model in order to make a classification tree model, the response should be converted from '1' and '0' to 'Yes' and 'No'. The conversion is made by using the factor method.
+
+```{r modeling}
+# Factor method.
+HeartFailure$DEATH_EVENT <- factor(ifelse(HeartFailure$DEATH_EVENT < 0.5, "No", "Yes"))
+TestDEATH_EVENT <- HeartFailure$DEATH_EVENT[-Index]
+# Decision Tree.
+DecisionTreeModel1 <- tree(DEATH_EVENT~., HeartFailure, subset = Index)
+# Plot.
+plot(DecisionTreeModel1)
+text(DecisionTreeModel1, pretty = 0)
+summary(DecisionTreeModel1)
+```
+
+The summary method is telling variables used in tree construction and the number of nodes. Variables are randomly selected.
+
+## Decision Tree Result
+
+The result of the above decision tree model.
+
+```{r}
+# Confusion matrix and statistics.
+TreePred <- predict(DecisionTreeModel1, Test, type = "class")
+confusionMatrix(data = TreePred, reference = TestDEATH_EVENT)
+```
+
+True observations is 33 + 14 = 47. False observations is 3 + 10 = 13. The models accuracy level is $78.33\%$. Recall of the model is calculated as 33/(33+10) = 0.7674. Precision of the model is calculated as 33/(33+3) = 0.9167.
+
+## Pruning Decision Tree
+
+Pruning will reduce the missclassification error rate of the model. For further decisions like pruning level, plotting will made according to k (alpha), deviance, and size.
+
+```{r}
+# Pruning level.
+cv.HeartFailure <- cv.tree(DecisionTreeModel1, FUN = prune.misclass)
+names(cv.HeartFailure)
+cv.HeartFailure
+# Plot.
+par(mfrow = c(2,2))
+plot(cv.HeartFailure$size, cv.HeartFailure$dev, type = "b")
+plot(cv.HeartFailure$k, cv.HeartFailure$dev, type = "b")
+plot(cv.HeartFailure$k, cv.HeartFailure$size, type = "b")
+```
+
+We see that the smallest deviance is starting from 2.
+
+```{r}
+# Pruning.
+Prune.DecisionTreeModel1 <- prune.tree(DecisionTreeModel1, best = 2)
+# Pruned tree model.
+plot(Prune.DecisionTreeModel1)
+text(Prune.DecisionTreeModel1, pretty = 0)
+summary(Prune.DecisionTreeModel1)
+```
+
+Terminal nodes reduced to 2.
+
+## Pruning Decision Tree Result
+
+After pruning the tree model prediction and confusion matrix of the model are made. Pruning can sometimes increase the accuracy of the model.
+
+```{r}
+# Confusion matrix and statistics.
+TreePredictPrune <- predict(Prune.DecisionTreeModel1, Test, type = "class")
+confusionMatrix(data = TreePredictPrune, reference = TestDEATH_EVENT)
+```
+
+True observations is 40 + 12 = 52. False observations is 5 + 3 = 8. The models accuracy level is $86.67\%$. Recall of the model is calculated as 40/(40+3) = 0.9302. Precision of the model is calculated as 40/(40+5) = 0.8889. As seen accuracy of the pruned model is higher.
+
+## Rpart Decision Tree
+
+In this section decision tree will made using Rpart library. Like the first part factor operation will be made for classification tree.
+
+```{r}
+Test$DEATH_EVENT <- factor(ifelse(Test$DEATH_EVENT < 0.5, "No", "Yes"))
+Train$DEATH_EVENT <- factor(ifelse(Train$DEATH_EVENT < 0.5, "No", "Yes"))
+# Rpart
+DecisionTreeModel2 <- rpart(DEATH_EVENT~., data = Train, method = "class")
+DecisionTreeModel2
+# Plot the Rpart
+par(xpd = NA) # Avoid clipping the text in some device
+plot(DecisionTreeModel2)
+text(DecisionTreeModel2, digits = 3)
+# Importance
+DecisionTreeModel2$variable.importance
+```
+
+Terminal nodes reduced to five.
+
+## Rpart Decision Tree Result
+
+```{r}
+# Prediction.
+Predicted <- DecisionTreeModel2 %>%
+  predict(Test, type = "class")
+head(Predicted)
+# Confusion matrix.
+confusionMatrix(data = Predicted, reference = TestDEATH_EVENT)
+```
+
+True observations is 37 + 13 = 50. False observations is 4 + 6 = 10. The models accuracy level is $83.33\%$. Recall of the model is calculated as 37/(37+6) = 0.8605. Precision of the model is calculated as 37/(37+4) = 0.9024. As seen the accuracy of the Rpart library model is lower than pruned model.
+
+## Rpart Decision Tree With Cross Validation
+
+In this section the aim is to do 5-fold cross validation in Rpart library.
+
+```{r}
+# 5 fold cross validation
+DecisionTreeModel3 <- train(DEATH_EVENT ~., data = Train, method = "rpart", trControl = trainControl("cv", number = 5), tuneLength = 10)
+```
+
+## Rpart Decision Tree With Cross Validation Result
+
+```{r}
+# Plot.
+par(xpd = NA)
+plot(DecisionTreeModel3$finalModel)
+text(DecisionTreeModel3$finalModel, digits = 3)
+# Prediction.
+Predicted3 <- DecisionTreeModel3 %>% predict(Test)
+# Confusion matrix.
+confusionMatrix(data = Predicted3, reference = TestDEATH_EVENT)
+```
+
+True observations is 40 + 12 = 52. False observations is 5 + 3 = 8. The models accuracy level is $86.67\%$. Recall of the model is calculated as 40/(40+3) = 0.9302. Precision of the model is calculated as 40/(40+5) = 0.8889. As seen, the model has gave the same results as pruned decision tree. 
+
+# Model Performance Comparison
+
+For checking a model's performance considering only accuracy will not give a good outcome. Thus for performance comparison recall, precision and F1 score values must be considered.
+
+* Accuracy = $\frac{TP + TN}{TP+FP+TN+FN}$
+* Recall (Sensitivity) = $\frac{TP}{TP+FN}$
+* Precision = $\frac{TP}{TP+FP}$
+* F1 score = $2*(\frac{Precision*Recall}{Precision+Recall})$
+
+Values for Unpruned Decision Tree Model:
+
+```{r, echo=FALSE}
+sprintf("Recall: %.4f", recall(data = TreePred, reference = TestDEATH_EVENT))
+sprintf("Precision: %.4f", precision(data = TreePred, reference = TestDEATH_EVENT))
+sprintf("F1 score: %.4f", F_meas(data = TreePred, reference = TestDEATH_EVENT))
+```
+
+Values for Pruned Decision Tree Model:
+
+```{r, echo=FALSE}
+sprintf("Recall: %.4f", recall(data = TreePredictPrune, reference = TestDEATH_EVENT))
+sprintf("Precision: %.4f", precision(data = TreePredictPrune, reference = TestDEATH_EVENT))
+sprintf("F1 score: %.4f", F_meas(data = TreePredictPrune, reference = TestDEATH_EVENT))
+```
+
+Values for  Rpart Decision Tree Model:
+
+```{r, echo=FALSE}
+sprintf("Recall: %.4f", recall(data = Predicted, reference = TestDEATH_EVENT))
+sprintf("Precision: %.4f", precision(data = Predicted, reference = TestDEATH_EVENT))
+sprintf("F1 score: %.4f", F_meas(data = Predicted, reference = TestDEATH_EVENT))
+```
+
+Values for  Rpart Decision Tree With Cross Validation Model:
+
+```{r, echo=FALSE}
+sprintf("Recall: %.4f", recall(data = Predicted3, reference = TestDEATH_EVENT))
+sprintf("Precision: %.4f", precision(data = Predicted3, reference = TestDEATH_EVENT))
+sprintf("F1 score: %.4f", F_meas(data = Predicted3, reference = TestDEATH_EVENT))
+```
+
+Values for Logisitic Regression Model:
+
+```{r, echo=FALSE}
+sprintf("Recall: %.4f", recall(data = ModelPreFactor, reference = TestDEATH_EVENTLogisitic))
+sprintf("Precision: %.4f", precision(data = ModelPreFactor, reference = TestDEATH_EVENTLogisitic))
+sprintf("F1 score: %.4f", F_meas(data = ModelPreFactor, reference = TestDEATH_EVENTLogisitic))
+```
+
+Where the case is intolerable to a false negative, the recall value will be significant. The precision value considerably is increasing when the false positive is getting significant. The primary objective of the F score is to lessen the impact of variation in recall and precision values. For instance, the F score will be low if the Recall value is high but the Precision value is low. The other way around, the F score is going to be low again.  Only when both Recall and Precision values are high would the F score be high. For this reason, the F score is more useful in deciding the better model when compared with the accuracy.
+
+About the precision values, Unpruned Decision Tree Model has the best precision value with 0.9167. Next Rpart Decision Tree Model coming next with 0.9024. Rpart Decision Tree With Cross Validation Model and Pruned Decision Tree Model 0.8889. The last one is Logistic Regression Model with 0.8837
+
+Comparing the above models, Rpart Decision Tree With Cross Validation Model and Pruned Decision Tree Model has the best recall value with 0.9302. It is followed by Logistic Regression Model with 0.8837. After that, Rpart Decision Tree Model coming next with 0.8605. The last one is Unpruned Decision Tree Model with 0.7674.
+
+Comparing the F score values, again Rpart Decision Tree With Cross Validation Model and Pruned Decision Tree Model has the best value with 0.9091. And after that Logistic Regression Model with 0.8837. After that, Unpruned Decision Tree Model coming next with 0.8357. The last one is Rpart Decision Tree Model with 0.8810.
+
+Furthermore, best accuracy value is 0.8667 with Rpart Decision Tree With Cross Validation Model and Pruned Decision Tree Model. The next ones are Logisitic Regression Result Accuracy and Rpart Decision Tree Result Accuracy with 0.8333. The last one is Decision Tree Accuracy with 0.7833.
+
+Various parameters can be used to choose the best model. The accuracy can be the primary consideration when choosing a model if the relative percentages of correct classifications were significant. But, accuracy does not provide data on false positives and false negatives. The models with high False negative counts will not be suitable for heart disease prediction since predicting sick patients as healthy is a risky outcome that is unacceptable in this situation.
+
+Recall values can be used to estimate high FN counts. Therefore, the two models with the lowest recall values are eliminate. Unpruned Decision Tree Model and Rpart Decision Tree Model has eliminated. The highest one is Rpart Decision Tree With Cross Validation Model. 
+
+For comparing the models with F scores, the less ones are Unpruned Decision Tree Model and Rpart Decision Tree Model. The highest one is Rpart Decision Tree With Cross Validation Model. 
+
+It is clear from the above observations that models with high recall and high F scores are better suited for cases of heart disease. Therefore, the best and most suitable model for heart disease is Rpart Decision Tree With Cross Validation Model and Pruned Decision Tree Model since the results are exactly same with the highest values.
+
+# Conclusions 
+
+In this report the aim was by using Logistic Regression and Decision Tree models, classify the heart failure as accurate as possible. We predict heart failure as we do observations on the dataset, we classify the data to determine which group each prediction about heart disease belongs to using a training set. Finally, we decided to choose Rpart Decision Tree With Cross Validation Model as the best model since it has the best values.
+
+# References 
+
+1) Aman Chauhan (2023, January 2), [Online]. Available: https://www.kaggle.com/datasets/whenamancodes/heart-failure-clinical-records
+
+2) yashchuahan (2023, January 3), [Online]. Available: https://www.geeksforgeeks.org/correlation-matrix-in-r-programming/
+
+3) Subha Ganapathi (2023, January 3), [Online]. Available: https://medium.com/nerd-for-tech/implementing-decision-trees-in-r-regression-problem-using-rpart-c74cbd9e0b7b
